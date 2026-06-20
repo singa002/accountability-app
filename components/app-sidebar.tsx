@@ -1,14 +1,15 @@
 "use client"
 
-import { CheckSquare, Repeat, ClipboardCheck, Flame } from "lucide-react"
+import { CheckSquare, Repeat, ClipboardCheck, Flame, Wind } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export type View = "tasks" | "habits" | "checkin"
+export type View = "tasks" | "habits" | "checkin" | "vents"
 
 const navItems: { id: View; label: string; icon: typeof CheckSquare }[] = [
   { id: "tasks", label: "Tasks", icon: CheckSquare },
   { id: "habits", label: "Habits", icon: Repeat },
   { id: "checkin", label: "Check-in", icon: ClipboardCheck },
+  { id: "vents", label: "Vents", icon: Wind },
 ]
 
 export function AppSidebar({
@@ -24,7 +25,7 @@ export function AppSidebar({
       <aside className="sticky top-0 hidden h-dvh w-20 flex-col items-center gap-2 border-r border-border bg-sidebar py-4 md:flex">
         <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Flame className="h-5 w-5" aria-hidden="true" />
-          <span className="sr-only">Momentum</span>
+          <span className="sr-only">Forge</span>
         </div>
 
         <nav className="flex flex-col items-center gap-2" aria-label="Main navigation">

@@ -6,6 +6,7 @@ import { StreakCounter } from "@/components/streak-counter"
 import { TasksView, type Task } from "@/components/tasks-view"
 import { HabitsView, type Habit } from "@/components/habits-view"
 import { CheckinView } from "@/components/checkin-view"
+import { VentsView, type Vent } from "@/components/vents-view"
 import { createClient } from "@/lib/supabase"
 
 const initialHabits: Habit[] = [
@@ -19,6 +20,7 @@ export default function Page() {
   const [view, setView] = useState<View>("tasks")
   const [user, setUser] = useState<any>(null)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [vents, setVents] = useState<Vent[]>([])
   const [habits, setHabits] = useState<Habit[]>(initialHabits)
   const [streak, setStreak] = useState(5)
   const [checkedInToday, setCheckedInToday] = useState(false)
@@ -26,12 +28,18 @@ export default function Page() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchTasks()
+      if (session?.user) {
+        fetchTasks()
+        fetchVents()
+      }
     })
 
     supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchTasks()
+      if (session?.user) {
+        fetchTasks()
+        fetchVents()
+      }
     })
   }, [])
 
@@ -43,6 +51,15 @@ export default function Page() {
     if (data) {
       setTasks(data.map(t => ({ id: t.id, title: t.title, done: t.is_completed })))
     }
+  }
+
+  const fetchVents = async () => {
+    const { data } = await supabase
+      .from('vents')
+      .select('*')
+      .neq('status', 'burned')
+      .order('created_at', { ascending: false })
+    if (data) setVents(data)
   }
 
   const addTask = async (title: string) => {
@@ -63,6 +80,22 @@ export default function Page() {
     fetchTasks()
   }
 
+  const addVent = async (content: string) => {
+    if (!user) return
+    await supabase.from('vents').insert({ content, user_id: user.id })
+    fetchVents()
+  }
+
+  const burnVent = async (id: string) => {
+    await supabase.from('vents').update({ status: 'burned' }).eq('id', id)
+    fetchVents()
+  }
+
+  const lockVent = async (id: string) => {
+    await supabase.from('vents').update({ status: 'locked' }).eq('id', id)
+    fetchVents()
+  }
+
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -74,9 +107,9 @@ export default function Page() {
     await supabase.auth.signOut()
     setUser(null)
     setTasks([])
+    setVents([])
   }
 
-  // Habit handlers (still local for now)
   let idCounter = 100
   const nextId = () => String(idCounter++)
   const addHabit = (name: string) =>
@@ -99,8 +132,8 @@ export default function Page() {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background text-foreground">
         <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4">Accountability App</h1>
-          <p className="text-muted-foreground mb-8">Sign in to get started</p>
+          <h1 className="text-4xl font-bold mb-4">Forge</h1>
+          <p className="text-muted-foreground mb-8">Build yourself. Burn what doesn't serve you.</p>
           <button
             onClick={signInWithGoogle}
             className="bg-white text-gray-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 cursor-pointer"
@@ -143,6 +176,14 @@ export default function Page() {
           )}
           {view === "checkin" && (
             <CheckinView onCheckIn={handleCheckIn} checkedInToday={checkedInToday} />
+          )}
+          {view === "vents" && (
+            <VentsView
+              vents={vents}
+              onAdd={addVent}
+              onBurn={burnVent}
+              onLock={lockVent}
+            />
           )}
         </div>
       </main>
