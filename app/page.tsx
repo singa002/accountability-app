@@ -1,13 +1,27 @@
-'use client'
+"use client"
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
+import { useState, useEffect } from "react"
+import { AppSidebar, type View } from "@/components/app-sidebar"
+import { StreakCounter } from "@/components/streak-counter"
+import { TasksView, type Task } from "@/components/tasks-view"
+import { HabitsView, type Habit } from "@/components/habits-view"
+import { CheckinView } from "@/components/checkin-view"
+import { createClient } from "@/lib/supabase"
 
-export default function Home() {
-  const [user, setUser] = useState<any>(null)
-  const [tasks, setTasks] = useState<any[]>([])
-  const [newTask, setNewTask] = useState('')
+const initialHabits: Habit[] = [
+  { id: "1", name: "Morning workout", week: [true, true, false, true, true, false, false] },
+  { id: "2", name: "Read 10 pages", week: [true, true, true, true, false, false, false] },
+  { id: "3", name: "No screens after 10pm", week: [false, true, true, false, true, false, false] },
+]
+
+export default function Page() {
   const supabase = createClient()
+  const [view, setView] = useState<View>("tasks")
+  const [user, setUser] = useState<any>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [habits, setHabits] = useState<Habit[]>(initialHabits)
+  const [streak, setStreak] = useState(5)
+  const [checkedInToday, setCheckedInToday] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -26,21 +40,21 @@ export default function Home() {
       .from('tasks')
       .select('*')
       .order('created_at', { ascending: false })
-    setTasks(data || [])
+    if (data) {
+      setTasks(data.map(t => ({ id: t.id, title: t.title, done: t.is_completed })))
+    }
   }
 
-  const addTask = async () => {
-    if (!newTask.trim()) return
-    await supabase.from('tasks').insert({ title: newTask, user_id: user.id })
-    setNewTask('')
+  const addTask = async (title: string) => {
+    if (!user) return
+    await supabase.from('tasks').insert({ title, user_id: user.id })
     fetchTasks()
   }
 
-  const toggleTask = async (task: any) => {
-    await supabase
-      .from('tasks')
-      .update({ is_completed: !task.is_completed })
-      .eq('id', task.id)
+  const toggleTask = async (id: string) => {
+    const task = tasks.find(t => t.id === id)
+    if (!task) return
+    await supabase.from('tasks').update({ is_completed: !task.done }).eq('id', id)
     fetchTasks()
   }
 
@@ -58,14 +72,35 @@ export default function Home() {
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    setUser(null)
+    setTasks([])
+  }
+
+  // Habit handlers (still local for now)
+  let idCounter = 100
+  const nextId = () => String(idCounter++)
+  const addHabit = (name: string) =>
+    setHabits((prev) => [...prev, { id: nextId(), name, week: Array(7).fill(false) }])
+  const toggleHabitDay = (id: string, dayIndex: number) =>
+    setHabits((prev) =>
+      prev.map((h) =>
+        h.id === id ? { ...h, week: h.week.map((d, i) => (i === dayIndex ? !d : d)) } : h,
+      ),
+    )
+  const deleteHabit = (id: string) => setHabits((prev) => prev.filter((h) => h.id !== id))
+
+  const handleCheckIn = () => {
+    if (checkedInToday) return
+    setCheckedInToday(true)
+    setStreak((s) => s + 1)
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+      <div className="flex min-h-dvh items-center justify-center bg-background text-foreground">
         <div className="text-center">
           <h1 className="text-4xl font-bold mb-4">Accountability App</h1>
-          <p className="text-gray-400 mb-8">Sign in to get started</p>
+          <p className="text-muted-foreground mb-8">Sign in to get started</p>
           <button
             onClick={signInWithGoogle}
             className="bg-white text-gray-900 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 cursor-pointer"
@@ -78,55 +113,39 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-8 max-w-2xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">My Tasks</h1>
-        <button onClick={signOut} className="text-gray-400 hover:text-white text-sm cursor-pointer">
-          Sign out
-        </button>
-      </div>
+    <div className="flex min-h-dvh bg-background text-foreground">
+      <AppSidebar active={view} onChange={setView} />
 
-      <div className="flex gap-2 mb-8">
-        <input
-          type="text"
-          value={newTask}
-          onChange={(e) => setNewTask(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addTask()}
-          placeholder="Add a new task..."
-          className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={addTask}
-          className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold cursor-pointer"
-        >
-          Add
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {tasks.map(task => (
-          <div key={task.id} className="flex items-center gap-3 bg-gray-800 px-4 py-3 rounded-lg">
-            <input
-              type="checkbox"
-              checked={task.is_completed}
-              onChange={() => toggleTask(task)}
-              className="w-5 h-5 cursor-pointer"
-            />
-            <span className={`flex-1 ${task.is_completed ? 'line-through text-gray-500' : ''}`}>
-              {task.title}
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-2xl flex-col gap-8 px-5 py-8 pb-28 sm:px-8 sm:py-12 md:pb-12">
+          <header className="flex items-center justify-between">
+            <span className="text-sm font-medium text-muted-foreground">
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </span>
-            <button
-              onClick={() => deleteTask(task.id)}
-              className="text-gray-500 hover:text-red-400 text-sm cursor-pointer"
-            >
-              Delete
-            </button>
-          </div>
-        ))}
-        {tasks.length === 0 && (
-          <p className="text-gray-500 text-center py-8">No tasks yet. Add one above!</p>
-        )}
-      </div>
+            <div className="flex items-center gap-4">
+              <StreakCounter streak={streak} />
+              <button onClick={signOut} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">
+                Sign out
+              </button>
+            </div>
+          </header>
+
+          {view === "tasks" && (
+            <TasksView tasks={tasks} onAdd={addTask} onToggle={toggleTask} onDelete={deleteTask} />
+          )}
+          {view === "habits" && (
+            <HabitsView
+              habits={habits}
+              onAdd={addHabit}
+              onToggleDay={toggleHabitDay}
+              onDelete={deleteHabit}
+            />
+          )}
+          {view === "checkin" && (
+            <CheckinView onCheckIn={handleCheckIn} checkedInToday={checkedInToday} />
+          )}
+        </div>
+      </main>
     </div>
   )
 }
