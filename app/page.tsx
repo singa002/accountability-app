@@ -96,6 +96,12 @@ export default function Page() {
     fetchVents()
   }
 
+  const unlockVent = async (id: string) => {
+    await supabase.from('vents').update({ status: 'active' }).eq('id', id)
+    fetchVents()
+  }
+
+
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -183,6 +189,7 @@ export default function Page() {
               onAdd={addVent}
               onBurn={burnVent}
               onLock={lockVent}
+              onUnlock={unlockVent}
             />
           )}
         </div>
