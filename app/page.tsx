@@ -9,20 +9,14 @@ import { CheckinView } from "@/components/checkin-view"
 import { VentsView, type Vent } from "@/components/vents-view"
 import { createClient } from "@/lib/supabase"
 
-const initialHabits: Habit[] = [
-  { id: "1", name: "Morning workout", week: [true, true, false, true, true, false, false] },
-  { id: "2", name: "Read 10 pages", week: [true, true, true, true, false, false, false] },
-  { id: "3", name: "No screens after 10pm", week: [false, true, true, false, true, false, false] },
-]
-
 export default function Page() {
   const supabase = createClient()
   const [view, setView] = useState<View>("tasks")
   const [user, setUser] = useState<any>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [vents, setVents] = useState<Vent[]>([])
-  const [habits, setHabits] = useState<Habit[]>(initialHabits)
-  const [streak, setStreak] = useState(5)
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [streak, setStreak] = useState(0)
   const [checkedInToday, setCheckedInToday] = useState(false)
 
   useEffect(() => {
@@ -31,6 +25,7 @@ export default function Page() {
       if (session?.user) {
         fetchTasks()
         fetchVents()
+        fetchHabits()
       }
     })
 
@@ -39,6 +34,7 @@ export default function Page() {
       if (session?.user) {
         fetchTasks()
         fetchVents()
+        fetchHabits()
       }
     })
   }, [])
@@ -60,6 +56,37 @@ export default function Page() {
       .neq('status', 'burned')
       .order('created_at', { ascending: false })
     if (data) setVents(data)
+  }
+
+  const fetchHabits = async () => {
+    const { data: habitData } = await supabase
+      .from('habits')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (!habitData) return
+
+    const today = new Date()
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today)
+      d.setDate(today.getDate() - (6 - i))
+      return d.toISOString().split('T')[0]
+    })
+
+    const { data: completions } = await supabase
+      .from('habit_completions')
+      .select('*')
+      .in('completed_on', days)
+
+    const mapped = habitData.map(h => ({
+      id: h.id,
+      name: h.name,
+      week: days.map(day =>
+        completions?.some(c => c.habit_id === h.id && c.completed_on === day) ?? false
+      )
+    }))
+
+    setHabits(mapped)
   }
 
   const addTask = async (title: string) => {
@@ -101,6 +128,42 @@ export default function Page() {
     fetchVents()
   }
 
+  const addHabit = async (name: string) => {
+    if (!user) return
+    await supabase.from('habits').insert({ name, user_id: user.id })
+    fetchHabits()
+  }
+
+  const toggleHabitDay = async (id: string, dayIndex: number) => {
+    const today = new Date()
+    const d = new Date(today)
+    d.setDate(today.getDate() - (6 - dayIndex))
+    const dateStr = d.toISOString().split('T')[0]
+
+    const habit = habits.find(h => h.id === id)
+    if (!habit) return
+
+    const isDone = habit.week[dayIndex]
+
+    if (isDone) {
+      await supabase
+        .from('habit_completions')
+        .delete()
+        .eq('habit_id', id)
+        .eq('completed_on', dateStr)
+    } else {
+      await supabase
+        .from('habit_completions')
+        .insert({ habit_id: id, user_id: user.id, completed_on: dateStr })
+    }
+
+    fetchHabits()
+  }
+
+  const deleteHabit = async (id: string) => {
+    await supabase.from('habits').delete().eq('id', id)
+    fetchHabits()
+  }
 
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
@@ -114,24 +177,13 @@ export default function Page() {
     setUser(null)
     setTasks([])
     setVents([])
+    setHabits([])
   }
-
-  let idCounter = 100
-  const nextId = () => String(idCounter++)
-  const addHabit = (name: string) =>
-    setHabits((prev) => [...prev, { id: nextId(), name, week: Array(7).fill(false) }])
-  const toggleHabitDay = (id: string, dayIndex: number) =>
-    setHabits((prev) =>
-      prev.map((h) =>
-        h.id === id ? { ...h, week: h.week.map((d, i) => (i === dayIndex ? !d : d)) } : h,
-      ),
-    )
-  const deleteHabit = (id: string) => setHabits((prev) => prev.filter((h) => h.id !== id))
 
   const handleCheckIn = () => {
     if (checkedInToday) return
     setCheckedInToday(true)
-    setStreak((s) => s + 1)
+    setStreak(s => s + 1)
   }
 
   if (!user) {
@@ -163,14 +215,22 @@ export default function Page() {
             </span>
             <div className="flex items-center gap-4">
               <StreakCounter streak={streak} />
-              <button onClick={signOut} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">
+              <button
+                onClick={signOut}
+                className="text-sm text-muted-foreground hover:text-foreground cursor-pointer"
+              >
                 Sign out
               </button>
             </div>
           </header>
 
           {view === "tasks" && (
-            <TasksView tasks={tasks} onAdd={addTask} onToggle={toggleTask} onDelete={deleteTask} />
+            <TasksView
+              tasks={tasks}
+              onAdd={addTask}
+              onToggle={toggleTask}
+              onDelete={deleteTask}
+            />
           )}
           {view === "habits" && (
             <HabitsView
@@ -181,7 +241,10 @@ export default function Page() {
             />
           )}
           {view === "checkin" && (
-            <CheckinView onCheckIn={handleCheckIn} checkedInToday={checkedInToday} />
+            <CheckinView
+              onCheckIn={handleCheckIn}
+              checkedInToday={checkedInToday}
+            />
           )}
           {view === "vents" && (
             <VentsView
